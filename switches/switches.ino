@@ -63,12 +63,12 @@
 // const int TRIG_PIN = 6;
 
 // Relay 2
-// const int DIR_PIN  = 20;
-// const int TRIG_PIN = 7;
+const int DIR_PIN  = 20;
+const int TRIG_PIN = 7;
 
-// Relay 3
-const int DIR_PIN  = 21;
-const int TRIG_PIN = 12;
+// //Relay 3
+// const int DIR_PIN  = 21;
+// const int TRIG_PIN = 12;
 
 // Relay 4
 // const int DIR_PIN  = 5;
@@ -92,6 +92,7 @@ void loop() {
   Serial.println("MOVING TO HIGH");
   digitalWrite(DIR_PIN, HIGH);
   delay(10000);
+  Serial.println("TRIGGERING LOW");
   digitalWrite(TRIG_PIN, LOW);
   delay(20);
   digitalWrite(TRIG_PIN, HIGH);
@@ -100,7 +101,9 @@ void loop() {
   Serial.println("MOVING TO LOW");
   digitalWrite(DIR_PIN, LOW);
   delay(10000);
+  Serial.println("TRIGGERING LOW");
   digitalWrite(TRIG_PIN, LOW);
   delay(20);
   digitalWrite(TRIG_PIN, HIGH);
+  delay(20);
 }
