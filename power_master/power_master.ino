@@ -84,47 +84,17 @@ void setup() {
   pinMode(INNER_OBSTACLE_SENSOR_PIN, INPUT_PULLUP);
   pinMode(OUTER_OBSTACLE_SENSOR_PIN, INPUT_PULLUP);
 
-  // relays: initialize HIGH so both tracks have power ON at startup (relay off = power flows)
+  // relays: initialize LOW so both tracks have power ON at startup (relay off = power flows)
   pinMode(TRACK_POWER_RELAY_1, OUTPUT);
-  digitalWrite(TRACK_POWER_RELAY_1, HIGH);
+  digitalWrite(TRACK_POWER_RELAY_1, LOW);
   pinMode(TRACK_POWER_RELAY_2, OUTPUT);
-  digitalWrite(TRACK_POWER_RELAY_2, HIGH);
+  digitalWrite(TRACK_POWER_RELAY_2, LOW);
 
   startTime = millis();
 }
 
 //  LOOP 
 void loop() {
-
-  // ================= OBSTACLE DETECTION =================
-  // LOW from sensor means obstacle detected (INPUT_PULLUP logic).
-  // Relays are active LOW: write LOW to cut power, HIGH to restore it.
-
-  // Track 4 — inner obstacle → Relay 1 (A1)
-  if (digitalRead(INNER_OBSTACLE_SENSOR_PIN) == LOW) {
-    digitalWrite(TRACK_POWER_RELAY_1, LOW);  // relay ON → track 4 power CUT
-    Serial.println("INNER OBSTACLE DETECTED — track 4 power CUT");
-  } else {
-    digitalWrite(TRACK_POWER_RELAY_1, HIGH); // relay OFF → track 4 power ON
-    Serial.println("Track 4 clear — power ON");
-  }
-
-  // Track 5 — outer obstacle → Relay 2 (A2)
-  if (digitalRead(OUTER_OBSTACLE_SENSOR_PIN) == LOW) {
-    digitalWrite(TRACK_POWER_RELAY_2, LOW);  // relay ON → track 5 power CUT
-    Serial.println("OUTER OBSTACLE DETECTED — track 5 power CUT");
-  } else {
-    digitalWrite(TRACK_POWER_RELAY_2, HIGH); // relay OFF → track 5 power ON
-    Serial.println("Track 5 clear — power ON");
-  }
-
-  // ================= SENSOR READ =================
-  int outerDist = outerSensor.readRangeContinuousMillimeters();
-  int innerDist = innerSensor.readRangeContinuousMillimeters();
-
-  bool outer_tree_fallen = (outerDist >= 130 && outerDist <= 170);
-  bool inner_tree_fallen = (innerDist >= 80 && innerDist <= 120);
-  bool both_tree_fallen = outer_tree_fallen && inner_tree_fallen;
 
   // ================= HOLD PHASE =================
   bool hold_phase = (!started && (millis() - startTime < 5000));
@@ -144,6 +114,36 @@ void loop() {
     outerInterval = random(5000, 10000);
 
     started = true;
+  }
+
+  // ================= SENSOR READ =================
+  int outerDist = outerSensor.readRangeContinuousMillimeters();
+  int innerDist = innerSensor.readRangeContinuousMillimeters();
+
+  bool outer_tree_fallen = (outerDist <= 170);
+  bool inner_tree_fallen = (innerDist <= 120);
+  bool both_tree_fallen = outer_tree_fallen && inner_tree_fallen;
+
+  // ================= OBSTACLE DETECTION =================
+  // LOW from sensor means obstacle detected (INPUT_PULLUP logic).
+  // Relays are active LOW: write LOW to cut power, HIGH to restore it.
+
+  // Track 4 — inner obstacle → Relay 1 (A1)
+  if (inner_tree_fallen == 1) {//(digitalRead(INNER_OBSTACLE_SENSOR_PIN) == LOW) {
+    digitalWrite(TRACK_POWER_RELAY_1, HIGH);  // relay ON → track 4 power CUT
+    Serial.println("INNER OBSTACLE DETECTED — track 4 power CUT");
+  } else {
+    digitalWrite(TRACK_POWER_RELAY_1, LOW); // relay OFF → track 4 power ON
+    Serial.println("Track 4 clear — power ON");
+  }
+
+  // Track 5 — outer obstacle → Relay 2 (A2)
+  if (outer_tree_fallen == 1) {//(digitalRead(OUTER_OBSTACLE_SENSOR_PIN) == LOW) {
+    digitalWrite(TRACK_POWER_RELAY_2, HIGH);  // relay ON → track 5 power CUT
+    Serial.println("OUTER OBSTACLE DETECTED — track 5 power CUT");
+  } else {
+    digitalWrite(TRACK_POWER_RELAY_2, LOW); // relay OFF → track 5 power ON
+    Serial.println("Track 5 clear — power ON");
   }
 
   // ================= INNER SERVO =================
@@ -193,4 +193,6 @@ void loop() {
 
   Serial.print(" BOTH FALLEN =");
   Serial.println(both_tree_fallen);
+
+  delay(500);
 }
