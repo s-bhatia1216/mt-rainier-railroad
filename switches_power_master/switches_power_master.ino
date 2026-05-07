@@ -43,19 +43,15 @@ bool outer_tree_lowered = true;
 #define TRACK_POWER_RELAY_2 A2  // track 5, outer obstacle
 
 //  TRACK SWITCHES
-// Physical → digital pin mapping per wiring diagram.
-// NOTE: DIR2=20 and DIR3=21 are SDA/SCL on the Mega — shared with Wire (VL53L0X I2C bus).
-//       These will conflict with I2C if both are active simultaneously.
-//
 // Switch 1: DIR=false → default straight, DIR=true → exit loop to default straight
 // Switch 2: DIR=false → default,           DIR=true → route to inner loop (track 4)
 // Switch 3: DIR=false → outer → default,   DIR=true → inner → default
 // Switch 4: DIR=false → default exit board, DIR=true → route to outer loop (track 5)
 const int DIR1  = 4;   // physical pin 6
 const int TRIG1 = 6;   // physical pin 12
-const int DIR2  = 20;  // physical pin 9  — WARNING: shared with SDA (I2C)
+const int DIR2  = 20;  // physical pin 9
 const int TRIG2 = 7;   // physical pin 13
-const int DIR3  = 21;  // physical pin 10 — WARNING: shared with SCL (I2C)
+const int DIR3  = 21;  // physical pin 10
 const int TRIG3 = 12;  // physical pin 18
 const int DIR4  = 5;   // physical pin 11
 const int TRIG4 = A0;  // physical pin 23
