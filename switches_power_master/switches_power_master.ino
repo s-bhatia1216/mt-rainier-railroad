@@ -56,9 +56,28 @@ const int TRIG3 = 12;  // physical pin 18
 const int DIR4  = 5;   // physical pin 11
 const int TRIG4 = A0;  // physical pin 23
 
-// Previous obstacle states — used to detect transitions and throw switches only on change.
-bool prevInnerFallen = false;
-bool prevOuterFallen = false;
+//  CONOPS PHASE STATE MACHINE
+// Tune these durations to match actual loop traversal time on the layout.
+#define OUTER_LOOP_DURATION_MS 5000UL
+#define INNER_LOOP_DURATION_MS 4000UL
+#define EXIT_HOLD_DURATION_MS  2000UL
+
+// ConOps sequence (train starts at rightmost point on track 3):
+//   OUTER_1 & OUTER_2: SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW  → outer loop (trk5)
+//   INNER_1 & INNER_2: SW1=HIGH, SW2=LOW, SW3=HIGH, SW4=LOW → inner loop (trk4)
+//   EXIT:              SW1=HIGH, SW2=LOW, SW4=LOW, SW3=LOW   → exit board
+enum ConOpsPhase {
+  PHASE_OUTER_1 = 0,
+  PHASE_OUTER_2,
+  PHASE_INNER_1,
+  PHASE_INNER_2,
+  PHASE_EXIT,
+  PHASE_DONE
+};
+
+ConOpsPhase currentPhase = PHASE_OUTER_1;
+unsigned long phaseTimer = 0;
+bool phaseInitialized = false;
 
 //  SETUP
 void setup() {
@@ -135,36 +154,60 @@ void moveSwitch(int dirPin, int trigPin, bool dir) {
   pulse(trigPin);
 }
 
-// Throws all four switches to the correct positions based on which loops are blocked.
-// Called only on rising/falling edge of each obstacle flag to avoid constant pulsing.
-//
-// Switch routing decisions:
-//   Switches 1, 2, 4 stay in default (false) position in all obstacle scenarios.
-//   Switch 3 is the only one that changes:
-//     inner blocked only → DIR=true  (inner → default, routes train out of inner loop)
-//     outer blocked or clear → DIR=false (outer → default, or just default)
-void updateSwitches(bool innerFallen, bool outerFallen) {
-  moveSwitch(DIR1, TRIG1, false); // switch 1: default straight
-  moveSwitch(DIR2, TRIG2, false); // switch 2: default (don't route new trains into inner)
-  moveSwitch(DIR4, TRIG4, false); // switch 4: default (don't route new trains into outer)
+// Throws all switches to the correct positions for the given ConOps phase.
+void setSwitchesForPhase(ConOpsPhase phase) {
+  switch (phase) {
+    case PHASE_OUTER_1:
+    case PHASE_OUTER_2:
+      // SW1=LOW: straight into SW2
+      // SW2=LOW: straight into trk3
+      // SW4=HIGH: enter trk5 outer loop
+      // SW3=LOW: go straight into default loop
+      moveSwitch(DIR1, TRIG1, false);
+      moveSwitch(DIR2, TRIG2, false);
+      moveSwitch(DIR4, TRIG4, true);
+      moveSwitch(DIR3, TRIG3, false);
+      Serial.print("PHASE OUTER ");
+      Serial.println(phase == PHASE_OUTER_1 ? "1" : "2");
+      break;
 
-  if (innerFallen && !outerFallen) {
-    moveSwitch(DIR3, TRIG3, true);  // switch 3: inner → default (exit inner loop)
-    Serial.println("SWITCHES: inner loop blocked — routing trains out of inner");
-  } else {
-    moveSwitch(DIR3, TRIG3, false); // switch 3: outer → default (or default)
-    if (outerFallen) {
-      Serial.println("SWITCHES: outer loop blocked — routing trains out of outer");
-    } else {
-      Serial.println("SWITCHES: all clear — default routing");
-    }
+    case PHASE_INNER_1:
+    case PHASE_INNER_2:
+      // SW1=HIGH: exit default loop into SW2
+      // SW2=LOW: enter trk4 inner loop
+      // SW4=LOW: don't enter outer loop
+      // SW3=HIGH: exit trk4 inner loop
+      moveSwitch(DIR1, TRIG1, true);
+      moveSwitch(DIR2, TRIG2, false);
+      moveSwitch(DIR4, TRIG4, false);
+      moveSwitch(DIR3, TRIG3, true);
+      Serial.print("PHASE INNER ");
+      Serial.println(phase == PHASE_INNER_1 ? "1" : "2");
+      break;
+
+    case PHASE_EXIT:
+      // SW1=HIGH: exit default loop into SW2
+      // SW2=LOW: go straight into trk3
+      // SW4=LOW: exit the track
+      // SW3=LOW: default
+      moveSwitch(DIR1, TRIG1, true);
+      moveSwitch(DIR2, TRIG2, false);
+      moveSwitch(DIR4, TRIG4, false);
+      moveSwitch(DIR3, TRIG3, false);
+      Serial.println("PHASE EXIT");
+      break;
+
+    case PHASE_DONE:
+    default:
+      Serial.println("PHASE DONE — no further switch changes");
+      break;
   }
 }
 
 //  LOOP
 void loop() {
 
-  // ================= HOLD PHASE =================
+  //  HOLD PHASE 
   bool hold_phase = (!started && (millis() - startTime < 5000));
 
   if (!started && hold_phase) {
@@ -184,7 +227,32 @@ void loop() {
     started = true;
   }
 
-  // ================= SENSOR READ =================
+  //  CONOPS PHASE INIT 
+  if (!phaseInitialized) {
+    setSwitchesForPhase(currentPhase);
+    phaseTimer = millis();
+    phaseInitialized = true;
+  }
+
+  //  CONOPS PHASE ADVANCE 
+  if (currentPhase != PHASE_DONE) {
+    unsigned long phaseDuration = 0;
+    switch (currentPhase) {
+      case PHASE_OUTER_1: phaseDuration = OUTER_LOOP_DURATION_MS; break;
+      case PHASE_OUTER_2: phaseDuration = OUTER_LOOP_DURATION_MS; break;
+      case PHASE_INNER_1: phaseDuration = INNER_LOOP_DURATION_MS; break;
+      case PHASE_INNER_2: phaseDuration = INNER_LOOP_DURATION_MS; break;
+      case PHASE_EXIT:    phaseDuration = EXIT_HOLD_DURATION_MS;  break;
+      default: break;
+    }
+    if (millis() - phaseTimer >= phaseDuration) {
+      currentPhase = (ConOpsPhase)(currentPhase + 1);
+      setSwitchesForPhase(currentPhase);
+      phaseTimer = millis();
+    }
+  }
+
+  //  SENSOR READ 
   int outerDist = outerSensor.readRangeContinuousMillimeters();
   int innerDist = innerSensor.readRangeContinuousMillimeters();
 
@@ -192,7 +260,7 @@ void loop() {
   bool inner_tree_fallen = (innerDist <= 120);
   bool both_tree_fallen = outer_tree_fallen && inner_tree_fallen;
 
-  // ================= OBSTACLE DETECTION =================
+  //  OBSTACLE DETECTION 
   // LOW from sensor means obstacle detected (INPUT_PULLUP logic).
   // Relays are active LOW: write LOW to cut power, HIGH to restore it.
 
@@ -214,15 +282,7 @@ void loop() {
     Serial.println("Track 5 clear — power ON");
   }
 
-  // ================= SWITCH UPDATE ON STATE CHANGE =================
-  // Only throw switches when obstacle state changes to avoid constant solenoid pulsing.
-  if (inner_tree_fallen != prevInnerFallen || outer_tree_fallen != prevOuterFallen) {
-    updateSwitches(inner_tree_fallen, outer_tree_fallen);
-    prevInnerFallen = inner_tree_fallen;
-    prevOuterFallen = outer_tree_fallen;
-  }
-
-  // ================= INNER SERVO =================
+  //  INNER SERVO 
   if (millis() - innerTimer >= innerInterval) {
     innerTimer = millis();
 
@@ -234,7 +294,7 @@ void loop() {
     innerInterval = random(5000, 10000);
   }
 
-  // ================= OUTER SERVO =================
+  //  OUTER SERVO 
   if (millis() - outerTimer >= outerInterval) {
     outerTimer = millis();
 
@@ -248,7 +308,7 @@ void loop() {
     outerInterval = random(5000, 10000);
   }
 
-  // ================= FULL TELEMETRY OUTPUT =================
+  //  FULL TELEMETRY OUTPUT 
   Serial.print("inner_dist=");
   Serial.print(innerDist);
 
@@ -269,6 +329,9 @@ void loop() {
 
   Serial.print(" BOTH FALLEN =");
   Serial.println(both_tree_fallen);
+
+  Serial.print("CONOPS_PHASE=");
+  Serial.println(currentPhase);
 
   delay(500);
 }
