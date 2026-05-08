@@ -1,10 +1,11 @@
 /////////////////////////////////////////////////////////////////
-// Relay / Actuator Test Utility
+// Relay / Actuator Group Test Utility
 //
-// HOW TO USE:
-// 1. Add the DIR/TRIG pin pairs you want to test in testPairs[]
-// 2. The script will cycle through each pair automatically
-// 3. Each relay moves HIGH, triggers, then LOW, triggers
+// GROUP 1:
+//   Relay 1 + Relay 2 together
+//
+// GROUP 2:
+//   Relay 3 + Relay 4 together
 /////////////////////////////////////////////////////////////////
 
 struct RelayPair {
@@ -14,31 +15,26 @@ struct RelayPair {
 };
 
 // =============================================================
-// SELECT WHICH RELAYS TO TEST
-// Add or remove entries here
+// RELAYS
 // =============================================================
 
-RelayPair testPairs[] = {
+RelayPair relays[] = {
   {4,  6,  "Relay 1"},
   {20, 7,  "Relay 2"},
   {21, 12, "Relay 3"},
   {5,  A0, "Relay 4"}
 };
 
-// Number of relay pairs
-const int NUM_RELAYS = sizeof(testPairs) / sizeof(testPairs[0]);
-
 // =============================================================
 // SETTINGS
 // =============================================================
 
-const unsigned long MOVE_DELAY = 10000; // time before trigger
-const unsigned long PULSE_TIME = 20;    // trigger pulse width
+const unsigned long MOVE_DELAY = 10000;
+const unsigned long PULSE_TIME = 20;
 
 // =============================================================
 
 void triggerRelay(int trigPin) {
-  Serial.println("TRIGGERING LOW");
 
   digitalWrite(trigPin, LOW);
   delay(PULSE_TIME);
@@ -47,28 +43,64 @@ void triggerRelay(int trigPin) {
   delay(PULSE_TIME);
 }
 
-void testRelay(RelayPair relay) {
+// Trigger multiple relays together
+void triggerGroup(RelayPair group[], int count) {
+
+  Serial.println("TRIGGERING GROUP");
+
+  // Pull all LOW together
+  for (int i = 0; i < count; i++) {
+    digitalWrite(group[i].trigPin, LOW);
+  }
+
+  delay(PULSE_TIME);
+
+  // Return all HIGH together
+  for (int i = 0; i < count; i++) {
+    digitalWrite(group[i].trigPin, HIGH);
+  }
+
+  delay(PULSE_TIME);
+}
+
+// Test a group simultaneously
+void testGroup(RelayPair group[], int count, const char* groupName) {
 
   Serial.println("=================================");
-  Serial.print("Testing: ");
-  Serial.println(relay.name);
+  Serial.print("Testing ");
+  Serial.println(groupName);
 
-  // Move HIGH
-  Serial.println("MOVING TO HIGH");
-  digitalWrite(relay.dirPin, HIGH);
+  // -------------------------------------------------
+  // MOVE HIGH
+  // -------------------------------------------------
+
+  Serial.println("MOVING GROUP TO HIGH");
+
+  for (int i = 0; i < count; i++) {
+    digitalWrite(group[i].dirPin, HIGH);
+  }
+
   delay(MOVE_DELAY);
 
-  triggerRelay(relay.trigPin);
+  triggerGroup(group, count);
 
-  // Move LOW
-  Serial.println("MOVING TO LOW");
-  digitalWrite(relay.dirPin, LOW);
+  // -------------------------------------------------
+  // MOVE LOW
+  // -------------------------------------------------
+
+  Serial.println("MOVING GROUP TO LOW");
+
+  for (int i = 0; i < count; i++) {
+    digitalWrite(group[i].dirPin, LOW);
+  }
+
   delay(MOVE_DELAY);
 
-  triggerRelay(relay.trigPin);
+  triggerGroup(group, count);
 
-  Serial.println("DONE");
+  Serial.println("GROUP DONE");
   Serial.println("=================================");
+
   delay(1000);
 }
 
@@ -76,28 +108,45 @@ void setup() {
 
   Serial.begin(9600);
 
-  // Initialize all selected relays
-  for (int i = 0; i < NUM_RELAYS; i++) {
+  // Initialize all relays
+  for (int i = 0; i < 4; i++) {
 
-    pinMode(testPairs[i].dirPin, OUTPUT);
-    pinMode(testPairs[i].trigPin, OUTPUT);
+    pinMode(relays[i].dirPin, OUTPUT);
+    pinMode(relays[i].trigPin, OUTPUT);
 
-    // idle state
-    digitalWrite(testPairs[i].trigPin, HIGH);
+    digitalWrite(relays[i].trigPin, HIGH);
   }
 
   delay(20);
 
-  Serial.println("Relay Test Starting...");
+  Serial.println("Relay Group Test Starting...");
 }
 
 void loop() {
 
-  // Test every selected relay
-  for (int i = 0; i < NUM_RELAYS; i++) {
-    testRelay(testPairs[i]);
-  }
+  // =================================================
+  // GROUP 1 -> Relay 1 + Relay 2
+  // =================================================
 
-  Serial.println("ALL RELAYS TESTED");
+  RelayPair group1[] = {
+    relays[0],
+    relays[1]
+  };
+
+  testGroup(group1, 2, "GROUP 1");
+
+  // =================================================
+  // GROUP 2 -> Relay 3 + Relay 4
+  // =================================================
+
+  RelayPair group2[] = {
+    relays[2],
+    relays[3]
+  };
+
+  testGroup(group2, 2, "GROUP 2");
+
+  Serial.println("ALL GROUPS TESTED");
+
   delay(5000);
 }
