@@ -20,7 +20,7 @@ init	sei
 
 	txs
 
-	LDA #$01	    	; Group Number 1 - edit to indicate your group number
+	LDA #$05	    	; Bench 5 - Sonal, Hriday, Sanjana
 	STA DISP
 	JSR DELAY
 ;-------------------------------------------
