@@ -25,7 +25,8 @@ const int NUM_RELAYS = 4;
 // SETTINGS
 // =============================================================
 
-const unsigned long MOVE_DELAY = 10000;
+const unsigned long OUTER_LOOP_DURATION = 45000UL;  // 45s — measured ~25s per lap
+const unsigned long INNER_LOOP_DURATION = 30000UL;  // 30s — measured ~13s per lap
 const unsigned long PULSE_TIME = 20;
 
 // =============================================================
@@ -71,14 +72,14 @@ void setRelayStates(int states[]) {
 
 // =============================================================
 
-void runPattern(int states[], const char* patternName) {
+void runPattern(int states[], const char* patternName, unsigned long duration) {
 
   Serial.println("================================");
   Serial.println(patternName);
 
   setRelayStates(states);
 
-  delay(MOVE_DELAY);
+  delay(duration);
 
   triggerAll();
 
@@ -127,7 +128,7 @@ void loop() {
     HIGH
   };
 
-  runPattern(pattern1, "PATTERN 1");
+  runPattern(pattern1, "PATTERN 1", OUTER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
   // PATTERN 2
@@ -141,7 +142,7 @@ void loop() {
     HIGH
   };
 
-  runPattern(pattern2, "PATTERN 2");
+  runPattern(pattern2, "PATTERN 2", OUTER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
   // PATTERN 3
@@ -158,7 +159,7 @@ void loop() {
     HIGH
   };
 
-  runPattern(pattern3, "PATTERN 3");
+  runPattern(pattern3, "PATTERN 3", INNER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
   // PATTERN 4
@@ -172,7 +173,7 @@ void loop() {
     HIGH
   };
 
-  runPattern(pattern4, "PATTERN 4");
+  runPattern(pattern4, "PATTERN 4", INNER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
   // PATTERN 5
@@ -189,7 +190,7 @@ void loop() {
     LOW
   };
 
-  runPattern(pattern5, "PATTERN 5");
+  runPattern(pattern5, "PATTERN 5", INNER_LOOP_DURATION);
 
   Serial.println("ALL PATTERNS COMPLETE");
 
