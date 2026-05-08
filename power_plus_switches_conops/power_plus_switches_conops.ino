@@ -346,15 +346,20 @@ void loop() {
 
   digitalWrite(TRACK_POWER_RELAY_2, outer_tree_fallen ? HIGH : LOW);
 
-  if (inner_tree_fallen && digitalRead(TRACK_POWER_RELAY_1) == HIGH) {
+  if (inner_tree_fallen && digitalRead(TRACK_POWER_RELAY_1) == HIGH &&
+      outer_tree_fallen && digitalRead(TRACK_POWER_RELAY_2) == HIGH) {
 
-    Serial.println("TRACK 4 CUT - INNER OBSTACLE DETECTED");
+      Serial.println("BOTH TRACK 4 AND TRACK 5 HAVE BEEN CUT");
 
   }
+  else if (inner_tree_fallen && digitalRead(TRACK_POWER_RELAY_1) == HIGH) {
 
-  if (outer_tree_fallen && digitalRead(TRACK_POWER_RELAY_2) == HIGH) {
+      Serial.println("TRACK 4 CUT - INNER OBSTACLE DETECTED");
 
-    Serial.println("TRACK 5 CUT - OUTER OBSTACLE DETECTED");
+  }
+  else if (outer_tree_fallen && digitalRead(TRACK_POWER_RELAY_2) == HIGH) {
+
+      Serial.println("TRACK 5 CUT - OUTER OBSTACLE DETECTED");
 
   }
 
@@ -441,6 +446,10 @@ void loop() {
   // TELEMETRY
 
   /////////////////////////////////////////////////////////////
+
+  Serial.print("PATTERN ");
+  Serial.print(currentPattern + 1);
+  Serial.print(" | ");
 
   Serial.print("inner_dist="); Serial.print(innerDist);
 
