@@ -1,6 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// ConOps Switch Sequencer
-// Outer loop x2 (45s each) → Inner loop x2 (30s each) → Exit
+// 4-Relay Coordinated Trigger Test
 /////////////////////////////////////////////////////////////////
 
 struct RelayPair {
@@ -18,80 +17,129 @@ RelayPair relays[] = {
 
 const int NUM_RELAYS = 4;
 
-const unsigned long OUTER_MS = 10000UL;  // DEBUG: set to 45000 for real run
-const unsigned long INNER_MS = 7000UL;   // DEBUG: set to 30000 for real run
-const unsigned long PULSE_MS = 20UL;
+const unsigned long MOVE_DELAY = 10000;
+const unsigned long PULSE_TIME = 50;
 
 // =============================================================
 
-void triggerAll() {
-  Serial.println("TRIGGERING");
-  for (int i = 0; i < NUM_RELAYS; i++) digitalWrite(relays[i].trigPin, LOW);
-  delay(PULSE_MS);
-  for (int i = 0; i < NUM_RELAYS; i++) digitalWrite(relays[i].trigPin, HIGH);
-  delay(PULSE_MS);
+void triggerAllStaggered() {
+
+  Serial.println("TRIGGERING ALL");
+
+  // Trigger one-by-one VERY quickly
+  // prevents power collapse/current spike
+
+  for (int i = 0; i < NUM_RELAYS; i++) {
+
+    digitalWrite(relays[i].trigPin, LOW);
+    delay(5);
+
+    digitalWrite(relays[i].trigPin, HIGH);
+    delay(5);
+  }
 }
 
-void setStates(int s[]) {
+// =============================================================
+
+void setRelayStates(int states[]) {
+
+  Serial.println("SETTING STATES");
+
   for (int i = 0; i < NUM_RELAYS; i++) {
-    digitalWrite(relays[i].dirPin, s[i]);
-    Serial.print(relays[i].name); Serial.print("="); Serial.println(s[i] ? "HIGH" : "LOW");
+
+    digitalWrite(relays[i].dirPin, states[i]);
+
+    Serial.print(relays[i].name);
+    Serial.print(" = ");
+
+    if (states[i] == HIGH)
+      Serial.println("HIGH");
+    else
+      Serial.println("LOW");
   }
+}
+
+// =============================================================
+
+void runPattern(int states[], const char* patternName) {
+
+  Serial.println("================================");
+  Serial.println(patternName);
+
+  // Set all directions first
+  setRelayStates(states);
+
+  // Wait for actuator direction setup
+  delay(MOVE_DELAY);
+
+  // Trigger all (slightly staggered)
+  triggerAllStaggered();
+
+  Serial.println("DONE");
+  Serial.println("================================");
+
+  delay(3000);
 }
 
 // =============================================================
 
 void setup() {
+
   Serial.begin(9600);
+
   for (int i = 0; i < NUM_RELAYS; i++) {
-    pinMode(relays[i].dirPin,  OUTPUT);
+
+    pinMode(relays[i].dirPin, OUTPUT);
     pinMode(relays[i].trigPin, OUTPUT);
+
     digitalWrite(relays[i].trigPin, HIGH);
   }
-  Serial.println("READY");
+
+  Serial.println("STARTING...");
 }
 
 // =============================================================
 
 void loop() {
 
-  // --- OUTER LOOP 1 ---
-  Serial.println("=== OUTER 1 ===");
-  int outer[] = { LOW, HIGH, LOW, HIGH };
-  setStates(outer);
-  delay(10000);
-  triggerAll();
-  delay(OUTER_MS);
+  /////////////////////////////////////////////////////////////
+  // PATTERN 1
+  /////////////////////////////////////////////////////////////
 
-  // --- OUTER LOOP 2 ---
-  Serial.println("=== OUTER 2 ===");
-  setStates(outer);
-  delay(10000);
-  triggerAll();
-  delay(OUTER_MS);
+  int pattern1[] = {
+    LOW,
+    LOW,
+    LOW,
+    HIGH
+  };
 
-  // --- INNER LOOP 1 ---
-  Serial.println("=== INNER 1 ===");
-  int inner[] = { HIGH, HIGH, HIGH, LOW };
-  setStates(inner);
-  delay(10000);
-  triggerAll();
-  delay(INNER_MS);
+  runPattern(pattern1, "PATTERN 1");
 
-  // --- INNER LOOP 2 ---
-  Serial.println("=== INNER 2 ===");
-  setStates(inner);
-  delay(10000);
-  triggerAll();
-  delay(INNER_MS);
+  /////////////////////////////////////////////////////////////
+  // PATTERN 2
+  /////////////////////////////////////////////////////////////
 
-  // --- EXIT ---
-  Serial.println("=== EXIT ===");
-  int exitPos[] = { HIGH, HIGH, LOW, LOW };
-  setStates(exitPos);
-  delay(10000);
-  triggerAll();
+  int pattern2[] = {
+    HIGH,
+    LOW,
+    HIGH,
+    HIGH
+  };
 
-  Serial.println("DONE");
-  delay(99999999UL);
+  runPattern(pattern2, "PATTERN 2");
+
+  /////////////////////////////////////////////////////////////
+  // PATTERN 3
+  /////////////////////////////////////////////////////////////
+
+  int pattern3[] = {
+    HIGH,
+    LOW,
+    HIGH,
+    LOW
+  };
+
+  runPattern(pattern3, "PATTERN 3");
+
+  delay(5000);
 }
