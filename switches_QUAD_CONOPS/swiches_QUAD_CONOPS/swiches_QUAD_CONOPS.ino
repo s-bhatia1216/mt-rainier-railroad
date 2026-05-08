@@ -21,17 +21,14 @@ const int NUM_RELAYS = 4;
 // TIMING SETTINGS
 /////////////////////////////////////////////////////////////////
 
-// Time AFTER setting directions BEFORE triggering relays
-const unsigned long MOVE_DELAY = 10000;
-
 // Tiny spacing between each relay trigger pulse
 // prevents power/current spike
 const unsigned long STAGGER_DELAY = 5;
 
 // Custom delay AFTER each pattern finishes
 const unsigned long PATTERN1_DELAY = 30000;
-const unsigned long PATTERN2_DELAY = 25000;
-const unsigned long PATTERN3_DELAY = 10000;
+const unsigned long PATTERN2_DELAY = 30000;
+const unsigned long PATTERN3_DELAY = 30000;
 
 /////////////////////////////////////////////////////////////////
 
@@ -83,10 +80,7 @@ void runPattern(
   // Set relay directions
   setRelayStates(states);
 
-  // Wait before triggering
-  delay(MOVE_DELAY);
-
-  // Trigger relays
+  // Trigger relays immediately
   triggerAllStaggered();
 
   Serial.println("DONE");
@@ -152,7 +146,7 @@ void loop() {
   );
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 3... exit 
+  // PATTERN 3... exit
   /////////////////////////////////////////////////////////////
 
   int pattern3[] = {
