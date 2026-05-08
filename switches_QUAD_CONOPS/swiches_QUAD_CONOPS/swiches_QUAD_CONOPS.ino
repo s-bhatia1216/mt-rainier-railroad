@@ -105,6 +105,12 @@ void setup() {
 
   delay(20);
 
+  // Initialize to outer loop ConOps: SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW
+  int outerInit[] = { 0, 0, 0, 1 }; // SW1=LOW, SW2=LOW, SW3=LOW, SW4=HIGH
+  setRelayStates(outerInit);
+  triggerAll();
+
+  Serial.println("SWITCHES initialized to outer loop.");
   Serial.println("4-Relay Simultaneous Test Starting...");
 }
 
@@ -144,54 +150,53 @@ void loop() {
   runPattern(pattern2, "PATTERN 2", OUTER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 3
-  // SW1 HIGH
-  // SW2 LOW
-  // SW3 HIGH
-  // SW4 HIGH
+  // PATTERN 3 — FIRST INNER LOOP
+  // SW1 HIGH — exit default loop into SW2
+  // SW2 LOW  — enter trk4 inner loop
+  // SW3 HIGH — exit trk4 inner loop
+  // SW4 LOW  — don't re-enter outer loop
   /////////////////////////////////////////////////////////////
 
   int pattern3[] = {
     HIGH,
     LOW,
     HIGH,
-    HIGH
+    LOW
   };
 
-  runPattern(pattern3, "PATTERN 3", INNER_LOOP_DURATION);
+  runPattern(pattern3, "PATTERN 3 - INNER 1", INNER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 4
-  // SAME AS PATTERN 3
+  // PATTERN 4 — SECOND INNER LOOP (same as pattern 3)
   /////////////////////////////////////////////////////////////
 
   int pattern4[] = {
     HIGH,
     LOW,
     HIGH,
-    HIGH
+    LOW
   };
 
-  runPattern(pattern4, "PATTERN 4", INNER_LOOP_DURATION);
+  runPattern(pattern4, "PATTERN 4 - INNER 2", INNER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 5
-  // SW1 HIGH
-  // SW2 LOW
-  // SW3 HIGH
-  // SW4 LOW
+  // PATTERN 5 — EXIT
+  // SW1 HIGH — exit default loop into SW2
+  // SW2 LOW  — go straight into trk3
+  // SW3 LOW  — default
+  // SW4 LOW  — exit the track
   /////////////////////////////////////////////////////////////
 
   int pattern5[] = {
     HIGH,
     LOW,
-    HIGH,
+    LOW,
     LOW
   };
 
-  runPattern(pattern5, "PATTERN 5", INNER_LOOP_DURATION);
+  runPattern(pattern5, "PATTERN 5 - EXIT", INNER_LOOP_DURATION);
 
-  Serial.println("ALL PATTERNS COMPLETE");
+  Serial.println("ALL PATTERNS COMPLETE — train has exited.");
 
-  delay(5000);
+  for (;;) {} // hold indefinitely after exit
 }
