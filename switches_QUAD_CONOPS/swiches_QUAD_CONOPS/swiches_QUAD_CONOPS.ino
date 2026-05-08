@@ -109,7 +109,7 @@ void setup() {
   delay(20);
 
   // Initialize to outer loop ConOps: SW1=LOW, SW2=LOW, SW3=LOW, SW4=HIGH
-  int outerInit[] = { 0, 0, 0, 1 }; // SW1=LOW, SW2=LOW, SW3=LOW, SW4=HIGH
+  int outerInit[] = { 0, 1, 0, 1 }; // SW1=LOW, SW2=HIGH, SW3=LOW, SW4=HIGH
   setRelayStates(outerInit);
   delay(500);
   triggerAll();
@@ -125,14 +125,14 @@ void loop() {
   /////////////////////////////////////////////////////////////
   // PATTERN 1
   // SW1 LOW
-  // SW2 LOW
+  // SW2 HIGH
   // SW3 LOW
   // SW4 HIGH
   /////////////////////////////////////////////////////////////
 
   int pattern1[] = {
     LOW,
-    LOW,
+    HIGH,
     LOW,
     HIGH
   };
@@ -140,13 +140,13 @@ void loop() {
   runPattern(pattern1, "PATTERN 1", OUTER_LOOP_DURATION);
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 2
-  // SAME AS PATTERN 1
+  // PATTERN 2 — SAME AS PATTERN 1
+  // SW2 HIGH
   /////////////////////////////////////////////////////////////
 
   int pattern2[] = {
     LOW,
-    LOW,
+    HIGH,
     LOW,
     HIGH
   };
@@ -156,14 +156,14 @@ void loop() {
   /////////////////////////////////////////////////////////////
   // PATTERN 3 — FIRST INNER LOOP
   // SW1 HIGH — exit default loop into SW2
-  // SW2 LOW  — enter trk4 inner loop
+  // SW2 HIGH — enter trk4 inner loop
   // SW3 HIGH — exit trk4 inner loop
   // SW4 LOW  — don't re-enter outer loop
   /////////////////////////////////////////////////////////////
 
   int pattern3[] = {
     HIGH,
-    LOW,
+    HIGH,
     HIGH,
     LOW
   };
@@ -176,7 +176,7 @@ void loop() {
 
   int pattern4[] = {
     HIGH,
-    LOW,
+    HIGH,
     HIGH,
     LOW
   };
@@ -186,14 +186,14 @@ void loop() {
   /////////////////////////////////////////////////////////////
   // PATTERN 5 — EXIT
   // SW1 HIGH — exit default loop into SW2
-  // SW2 LOW  — go straight into trk3
+  // SW2 HIGH — go straight into trk3
   // SW3 LOW  — default
   // SW4 LOW  — exit the track
   /////////////////////////////////////////////////////////////
 
   int pattern5[] = {
     HIGH,
-    LOW,
+    HIGH,
     LOW,
     LOW
   };
