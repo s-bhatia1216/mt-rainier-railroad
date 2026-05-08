@@ -30,6 +30,10 @@ unsigned long startTime = 0;
 bool inner_tree_lowered = true;
 bool outer_tree_lowered = true;
 
+// Obstacle states — updated by runActuation(), read by loop() for switch rerouting.
+bool outer_tree_fallen = false;
+bool inner_tree_fallen = false;
+
 //  OBSTACLE / TRACK POWER
 // Pins 4 and 5 used (pin 2 is taken by XSHUT_PIN_2, pin 3 by XSHUT_PIN_1).
 // INPUT_PULLUP: pin reads HIGH normally, LOW when obstacle detected.
@@ -37,16 +41,16 @@ bool outer_tree_lowered = true;
 #define OUTER_OBSTACLE_SENSOR_PIN 5  // track 5 — outer obstacle
 
 // Relays are active LOW: LOW = relay energized = track power CUT, HIGH = relay off = track power ON.
-// A1 = ATmega physical pin 24 = Relay 1 → Track 4 (inner)
-// A2 = ATmega physical pin 25 = Relay 2 → Track 5 (outer)
+// A1 = ATmega physical pin 24 = Relay 1 -> Track 4 (inner)
+// A2 = ATmega physical pin 25 = Relay 2 -> Track 5 (outer)
 #define TRACK_POWER_RELAY_1 A1  // track 4, inner obstacle
 #define TRACK_POWER_RELAY_2 A2  // track 5, outer obstacle
 
 //  TRACK SWITCHES
-// Switch 1: DIR=false → default straight, DIR=true → exit loop to default straight
-// Switch 2: DIR=false → default,           DIR=true → route to inner loop (track 4)
-// Switch 3: DIR=false → outer → default,   DIR=true → inner → default
-// Switch 4: DIR=false → default exit board, DIR=true → route to outer loop (track 5)
+// Switch 1: DIR=false -> default straight, DIR=true -> exit loop to default straight
+// Switch 2: DIR=false -> default,           DIR=true -> route to inner loop (track 4)
+// Switch 3: DIR=false -> outer -> default,   DIR=true -> inner -> default
+// Switch 4: DIR=false -> default exit board, DIR=true -> route to outer loop (track 5)
 const int DIR1  = 4;   // physical pin 6
 const int TRIG1 = 6;   // physical pin 12
 const int DIR2  = 20;  // physical pin 9
@@ -118,8 +122,12 @@ void setup() {
   pinMode(DIR4,  OUTPUT); digitalWrite(DIR4,  LOW);
   pinMode(TRIG4, OUTPUT); digitalWrite(TRIG4, LOW);
 
-  // throw switches to outer loop position immediately
-  setOuterSwitches();
+  // throw switches to outer loop position sequentially — 2s apart to avoid current surge
+  moveSwitch(DIR1, TRIG1, false); delay(2000);
+  moveSwitch(DIR2, TRIG2, false); delay(2000);
+  moveSwitch(DIR4, TRIG4, true);  delay(2000);
+  moveSwitch(DIR3, TRIG3, false);
+  Serial.println("SWITCHES: initialized to outer loop");
 
   startTime = millis();
 }
@@ -138,7 +146,7 @@ void moveSwitch(int dirPin, int trigPin, bool dir) {
   pulse(trigPin);
 }
 
-// SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW → outer loop (trk5)
+// SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW -> outer loop (trk5)
 void setOuterSwitches() {
   moveSwitch(DIR1, TRIG1, false);
   moveSwitch(DIR2, TRIG2, false);
@@ -147,7 +155,7 @@ void setOuterSwitches() {
   Serial.println("SWITCHES: outer loop");
 }
 
-// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=HIGH → inner loop (trk4)
+// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=HIGH -> inner loop (trk4)
 void setInnerSwitches() {
   moveSwitch(DIR1, TRIG1, true);
   moveSwitch(DIR2, TRIG2, false);
@@ -156,7 +164,7 @@ void setInnerSwitches() {
   Serial.println("SWITCHES: inner loop");
 }
 
-// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=LOW → exit board
+// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=LOW -> exit board
 void setExitSwitches() {
   moveSwitch(DIR1, TRIG1, true);
   moveSwitch(DIR2, TRIG2, false);
@@ -166,15 +174,16 @@ void setExitSwitches() {
 }
 
 // Runs one cycle of sensor read, relay control, servo actuation, and telemetry.
+// Updates global outer_tree_fallen / inner_tree_fallen for loop() to read.
 void runActuation() {
   int outerDist = outerSensor.readRangeContinuousMillimeters();
   int innerDist = innerSensor.readRangeContinuousMillimeters();
 
-  bool outer_tree_fallen = (outerDist <= 170);
-  bool inner_tree_fallen = (innerDist <= 120);
-  bool both_tree_fallen  = outer_tree_fallen && inner_tree_fallen;
+  outer_tree_fallen = (outerDist <= 170);
+  inner_tree_fallen = (innerDist <= 120);
+  bool both_tree_fallen = outer_tree_fallen && inner_tree_fallen;
 
-  // Track 4 — inner obstacle → Relay 1 (A1)
+  // Track 4 — inner obstacle -> Relay 1 (A1)
   if (inner_tree_fallen == 1) {
     digitalWrite(TRACK_POWER_RELAY_1, HIGH);
     Serial.println("INNER OBSTACLE DETECTED — track 4 power CUT");
@@ -183,7 +192,7 @@ void runActuation() {
     Serial.println("Track 4 clear — power ON");
   }
 
-  // Track 5 — outer obstacle → Relay 2 (A2)
+  // Track 5 — outer obstacle -> Relay 2 (A2)
   if (outer_tree_fallen == 1) {
     digitalWrite(TRACK_POWER_RELAY_2, HIGH);
     Serial.println("OUTER OBSTACLE DETECTED — track 5 power CUT");
@@ -239,18 +248,38 @@ void loop() {
   }
 
   // ================= OUTER LOOP — 60 seconds =================
+  // If outer track blocked, reroute to inner switches; restore when clear.
   setOuterSwitches();
+  bool outerRerouted = false;
   unsigned long t = millis();
   while (millis() - t < OUTER_DURATION_MS) {
     runActuation();
+    if (outer_tree_fallen && !outerRerouted) {
+      setInnerSwitches();
+      outerRerouted = true;
+    } else if (!outer_tree_fallen && outerRerouted) {
+      setOuterSwitches();
+      outerRerouted = false;
+    }
   }
+  if (outerRerouted) setOuterSwitches(); // restore before transitioning
 
   // ================= INNER LOOP — 60 seconds =================
+  // If inner track blocked, reroute to outer switches; restore when clear.
   setInnerSwitches();
+  bool innerRerouted = false;
   t = millis();
   while (millis() - t < INNER_DURATION_MS) {
     runActuation();
+    if (inner_tree_fallen && !innerRerouted) {
+      setOuterSwitches();
+      innerRerouted = true;
+    } else if (!inner_tree_fallen && innerRerouted) {
+      setInnerSwitches();
+      innerRerouted = false;
+    }
   }
+  if (innerRerouted) setInnerSwitches(); // restore before transitioning
 
   // ================= EXIT =================
   setExitSwitches();
