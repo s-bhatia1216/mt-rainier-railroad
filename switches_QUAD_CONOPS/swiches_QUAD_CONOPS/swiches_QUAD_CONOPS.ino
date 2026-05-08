@@ -78,10 +78,9 @@ void runPattern(int states[], const char* patternName, unsigned long duration) {
   Serial.println(patternName);
 
   setRelayStates(states);
+  triggerAll();
 
   delay(duration);
-
-  triggerAll();
 
   Serial.println("PATTERN COMPLETE");
   Serial.println("================================");
