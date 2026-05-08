@@ -346,6 +346,18 @@ void loop() {
 
   digitalWrite(TRACK_POWER_RELAY_2, outer_tree_fallen ? HIGH : LOW);
 
+  if (inner_tree_fallen && digitalRead(TRACK_POWER_RELAY_1) == HIGH) {
+
+    Serial.println("TRACK 4 CUT - INNER OBSTACLE DETECTED");
+
+  }
+
+  if (outer_tree_fallen && digitalRead(TRACK_POWER_RELAY_2) == HIGH) {
+
+    Serial.println("TRACK 5 CUT - OUTER OBSTACLE DETECTED");
+
+  }
+
   /////////////////////////////////////////////////////////////
 
   // SERVO LOGIC
