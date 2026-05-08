@@ -137,6 +137,8 @@ void setup() {
   pinMode(DIR4,  OUTPUT); digitalWrite(DIR4,  LOW);
   pinMode(TRIG4, OUTPUT); digitalWrite(TRIG4, LOW);
 
+  setSwitchesForPhase(PHASE_OUTER_1);
+
   startTime = millis();
 }
 
