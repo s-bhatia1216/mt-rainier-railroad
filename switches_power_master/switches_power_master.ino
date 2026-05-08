@@ -1,245 +1,325 @@
+
+// Mt. Rainier Railroad - Integrated Master Controller
+//
+// Subsystems:
+//   1. VL53L0X distance sensors  - detect tree obstacles on each track
+//   2. Servo-driven trees        - randomly lower/raise obstacles
+//   3. Track power relays (A1/A2)- cut track power when tree has fallen
+//   4. Solenoid track switches   - staggered active-LOW firing (QUAD_CONOPS)
+//   5. ConOps                    - outer loop -> inner loop -> exit board
+
+
 #include <Wire.h>
 #include <VL53L0X.h>
 #include <Servo.h>
 
-//  SENSORS
+
+// SECTION 1: SENSORS (VL53L0X)
+
+
 VL53L0X outerSensor;
 VL53L0X innerSensor;
 
-#define XSHUT_PIN_1 3 //inner is digital pin 2
-#define XSHUT_PIN_2 2 //outer is digital pin 3
+// XSHUT_OUTER on pin 3 brings up the outer sensor first (assigned 0x30).
+// XSHUT_INNER on pin 2 brings up the inner sensor second (assigned 0x31).
+#define XSHUT_OUTER 3
+#define XSHUT_INNER 2
 
-//  SERVOS
-Servo innerServo;
-Servo outerServo;
+#define OUTER_FALL_THRESHOLD_MM 170
+#define INNER_FALL_THRESHOLD_MM 120
 
-//  STATE
-int innerState = 1;
-int outerState = 1;
-
-unsigned long innerTimer = 0;
-unsigned long outerTimer = 0;
-
-unsigned long innerInterval = 5000;
-unsigned long outerInterval = 5000;
-
-bool started = false;
-unsigned long startTime = 0;
-
-//  SEMANTIC FLAGS
-bool inner_tree_lowered = true;
-bool outer_tree_lowered = true;
-
-// Obstacle states — updated by runActuation(), read by loop() for switch rerouting.
+// Updated by runActuation() each cycle; read by loop() for switch rerouting.
 bool outer_tree_fallen = false;
 bool inner_tree_fallen = false;
 
-//  OBSTACLE / TRACK POWER
-// Pins 4 and 5 used (pin 2 is taken by XSHUT_PIN_2, pin 3 by XSHUT_PIN_1).
-// INPUT_PULLUP: pin reads HIGH normally, LOW when obstacle detected.
-#define INNER_OBSTACLE_SENSOR_PIN 4  // track 4 — inner obstacle
-#define OUTER_OBSTACLE_SENSOR_PIN 5  // track 5 — outer obstacle
 
-// Relays are active LOW: LOW = relay energized = track power CUT, HIGH = relay off = track power ON.
-// A1 = ATmega physical pin 24 = Relay 1 -> Track 4 (inner)
-// A2 = ATmega physical pin 25 = Relay 2 -> Track 5 (outer)
-#define TRACK_POWER_RELAY_1 A1  // track 4, inner obstacle
-#define TRACK_POWER_RELAY_2 A2  // track 5, outer obstacle
+// SECTION 2: SERVOS (tree actuation)
 
-//  TRACK SWITCHES
-// Switch 1: DIR=false -> default straight, DIR=true -> exit loop to default straight
-// Switch 2: DIR=false -> default,           DIR=true -> route to inner loop (track 4)
-// Switch 3: DIR=false -> outer -> default,   DIR=true -> inner -> default
-// Switch 4: DIR=false -> default exit board, DIR=true -> route to outer loop (track 5)
-const int DIR1  = 4;   // physical pin 6
-const int TRIG1 = 6;   // physical pin 12
-const int DIR2  = 20;  // physical pin 9
-const int TRIG2 = 7;   // physical pin 13
-const int DIR3  = 21;  // physical pin 10
-const int TRIG3 = 12;  // physical pin 18
-const int DIR4  = 5;   // physical pin 11
-const int TRIG4 = A0;  // physical pin 23
 
-// ConOps phase durations
-#define OUTER_DURATION_MS 60000UL
-#define INNER_DURATION_MS 60000UL
+Servo innerServo;
+Servo outerServo;
 
-//  SETUP
+int innerState = 1;
+int outerState = 1;
+
+bool inner_tree_lowered = true;
+bool outer_tree_lowered = true;
+
+unsigned long innerTimer    = 0;
+unsigned long outerTimer    = 0;
+unsigned long innerInterval = 5000;
+unsigned long outerInterval = 5000;
+
+
+// SECTION 3: TRACK POWER RELAYS
+//
+// LOW  = relay off  = track power ON  (default / safe state)
+// HIGH = relay on   = track power CUT (activated when tree fallen)
+//
+// A1 -> inner track (track 4)
+// A2 -> outer track (track 5)
+
+
+#define TRACK_POWER_RELAY_INNER A1
+#define TRACK_POWER_RELAY_OUTER A2
+
+
+// SECTION 4: TRACK SWITCHES (solenoid relay pairs)
+//
+// Each switch has a DIR pin (sets throw direction) and a TRIG pin
+// (fires the solenoid pulse). TRIG pins are active LOW:
+//   idle = HIGH, pulse = LOW for STAGGER_DELAY_MS, then back to HIGH.
+//
+// All four switches are triggered together in staggered sequence
+// to prevent current/power spikes (QUAD_CONOPS pattern).
+
+
+struct RelayPair {
+  int dirPin;
+  int trigPin;
+  const char* name;
+};
+
+RelayPair switches[] = {
+  {4,   6,   "SW1"},
+  {20,  7,   "SW2"},
+  {21,  12,  "SW3"},
+  {5,   A0,  "SW4"}
+};
+
+const int NUM_SWITCHES = 4;
+
+// Stagger between consecutive trigger pulses - prevents current spike.
+const unsigned long STAGGER_DELAY_MS = 5;
+
+// Direction patterns: element order = {SW1, SW2, SW3, SW4}
+// LOW  = default straight position
+// HIGH = diverted position
+const int PATTERN_OUTER_LOOP[4] = {LOW,  LOW,  LOW,  HIGH};  // outer loop, track 5
+const int PATTERN_INNER_LOOP[4] = {HIGH, LOW,  HIGH, LOW};   // inner loop, track 4
+const int PATTERN_EXIT_BOARD[4] = {HIGH, LOW,  LOW,  LOW};   // exit board
+
+
+// SECTION 5: CONOPS TIMING
+
+
+#define OUTER_PHASE_DURATION_MS 60000UL
+#define INNER_PHASE_DURATION_MS 60000UL
+
+bool started       = false;
+unsigned long startTime = 0;
+
+
+// SWITCH FUNCTIONS
+
+
+// Step 1 of 2: write all DIR pins according to pattern.
+void setSwitchDirections(const int pattern[]) {
+  for (int i = 0; i < NUM_SWITCHES; i++) {
+    digitalWrite(switches[i].dirPin, pattern[i]);
+    Serial.print("  [DIR] ");
+    Serial.print(switches[i].name);
+    Serial.print(" -> ");
+    Serial.println(pattern[i] == HIGH ? "HIGH (diverted)" : "LOW (straight)");
+  }
+}
+
+// Step 2 of 2: fire each TRIG pin with a staggered active-LOW pulse.
+// TRIG rests HIGH; pulses LOW for STAGGER_DELAY_MS to actuate solenoid.
+void triggerAllSwitchesStaggered() {
+  for (int i = 0; i < NUM_SWITCHES; i++) {
+    digitalWrite(switches[i].trigPin, LOW);
+    delay(STAGGER_DELAY_MS);
+    digitalWrite(switches[i].trigPin, HIGH);
+    delay(STAGGER_DELAY_MS);
+    Serial.print("  [TRIG] ");
+    Serial.print(switches[i].name);
+    Serial.println(" fired");
+  }
+}
+
+// Applies a complete switch pattern: set directions then trigger all.
+void applySwitchPattern(const int pattern[], const char* label) {
+  Serial.println("");
+  Serial.print("[SWITCHES] Applying pattern: ");
+  Serial.println(label);
+  setSwitchDirections(pattern);
+  Serial.println("[SWITCHES] Triggering all (staggered active-LOW)...");
+  triggerAllSwitchesStaggered();
+  Serial.print("[SWITCHES] Pattern complete: ");
+  Serial.println(label);
+  Serial.println("");
+}
+
+// Named switch configurations.
+void switchToOuterLoop() { applySwitchPattern(PATTERN_OUTER_LOOP, "OUTER LOOP (track 5)"); }
+void switchToInnerLoop() { applySwitchPattern(PATTERN_INNER_LOOP, "INNER LOOP (track 4)"); }
+void switchToExit()      { applySwitchPattern(PATTERN_EXIT_BOARD, "EXIT BOARD"); }
+
+
+// ACTUATION - sensor read, relay safety, servo tick, telemetry
+// Called every ~500 ms inside ConOps phase loops.
+
+
+void runActuation() {
+  int outerDist = outerSensor.readRangeContinuousMillimeters();
+  int innerDist = innerSensor.readRangeContinuousMillimeters();
+
+  bool new_outer_fallen = (outerDist <= OUTER_FALL_THRESHOLD_MM);
+  bool new_inner_fallen = (innerDist <= INNER_FALL_THRESHOLD_MM);
+
+  //  Track power relay: outer (track 5) 
+  if (new_outer_fallen != outer_tree_fallen || new_outer_fallen) {
+    if (new_outer_fallen) {
+      digitalWrite(TRACK_POWER_RELAY_OUTER, HIGH);
+      Serial.println("[SAFETY] Outer tree FALLEN - track 5 power CUT");
+    } else if (outer_tree_fallen) {
+      digitalWrite(TRACK_POWER_RELAY_OUTER, LOW);
+      Serial.println("[SAFETY] Outer tree cleared - track 5 power RESTORED");
+    }
+  }
+
+  //  Track power relay: inner (track 4) 
+  if (new_inner_fallen != inner_tree_fallen || new_inner_fallen) {
+    if (new_inner_fallen) {
+      digitalWrite(TRACK_POWER_RELAY_INNER, HIGH);
+      Serial.println("[SAFETY] Inner tree FALLEN - track 4 power CUT");
+    } else if (inner_tree_fallen) {
+      digitalWrite(TRACK_POWER_RELAY_INNER, LOW);
+      Serial.println("[SAFETY] Inner tree cleared - track 4 power RESTORED");
+    }
+  }
+
+  outer_tree_fallen = new_outer_fallen;
+  inner_tree_fallen = new_inner_fallen;
+
+  //  Inner servo tick 
+  if (millis() - innerTimer >= innerInterval) {
+    innerTimer    = millis();
+    innerState    = !innerState;
+    innerServo.write(innerState ? 90 : 0);
+    inner_tree_lowered = innerState;
+    innerInterval = random(5000, 10000);
+    Serial.print("[SERVO] Inner tree -> ");
+    Serial.println(inner_tree_lowered ? "LOWERED (obstacle possible)" : "RAISED (track clear)");
+  }
+
+  //  Outer servo tick 
+  if (millis() - outerTimer >= outerInterval) {
+    outerTimer    = millis();
+    outerState    = !outerState;
+    outerServo.write(outerState ? 0 : 90);   // note: outer servo mapping is inverted
+    outer_tree_lowered = outerState;
+    outerInterval = random(5000, 10000);
+    Serial.print("[SERVO] Outer tree -> ");
+    Serial.println(outer_tree_lowered ? "LOWERED (obstacle possible)" : "RAISED (track clear)");
+  }
+
+  //  Cycle telemetry 
+  Serial.print("[SENSOR] outer=");      Serial.print(outerDist);
+  Serial.print("mm (");                 Serial.print(outer_tree_fallen ? "FALLEN" : "clear");
+  Serial.print(")  inner=");            Serial.print(innerDist);
+  Serial.print("mm (");                 Serial.print(inner_tree_fallen ? "FALLEN" : "clear");
+  Serial.print(")  | power: track5=");  Serial.print(outer_tree_fallen ? "CUT" : "ON");
+  Serial.print("  track4=");            Serial.println(inner_tree_fallen ? "CUT" : "ON");
+
+  delay(500);
+}
+
+
+// SETUP
+
+
 void setup() {
   Serial.begin(9600);
   delay(3000);
+  Serial.println("========================================");
+  Serial.println("[INIT] Mt. Rainier Railroad - startup");
+  Serial.println("========================================");
 
-  Serial.println("A: START");
-
-  // servos
+  //  Servos 
+  Serial.println("[INIT] Attaching servos (both to lowered position)...");
   innerServo.attach(11);
   outerServo.attach(10);
+  innerServo.write(90);   // lowered
+  outerServo.write(0);    // lowered (outer is inverted)
+  Serial.println("[INIT] Servos OK");
 
-  innerServo.write(90); // lowered (inner)
-  outerServo.write(0);  // lowered (outer)
-
-  // sensors
-  pinMode(XSHUT_PIN_1, OUTPUT);
-  pinMode(XSHUT_PIN_2, OUTPUT);
-  digitalWrite(XSHUT_PIN_1, LOW);
-  digitalWrite(XSHUT_PIN_2, LOW);
+  //  VL53L0X sensors: bring up one at a time to assign addresses 
+  Serial.println("[INIT] Initializing VL53L0X sensors...");
+  pinMode(XSHUT_OUTER, OUTPUT);
+  pinMode(XSHUT_INNER, OUTPUT);
+  digitalWrite(XSHUT_OUTER, LOW);
+  digitalWrite(XSHUT_INNER, LOW);
   delay(500);
 
   Wire.begin();
   Wire.setClock(400000);
 
-  digitalWrite(XSHUT_PIN_1, HIGH);
+  Serial.println("[INIT] Bringing up outer sensor -> address 0x30...");
+  digitalWrite(XSHUT_OUTER, HIGH);
   delay(500);
   outerSensor.init();
   outerSensor.setAddress(0x30);
   outerSensor.startContinuous();
+  Serial.println("[INIT] Outer sensor OK (0x30)");
 
-  digitalWrite(XSHUT_PIN_2, HIGH);
+  Serial.println("[INIT] Bringing up inner sensor -> address 0x31...");
+  digitalWrite(XSHUT_INNER, HIGH);
   delay(500);
   innerSensor.init();
   innerSensor.setAddress(0x31);
   innerSensor.startContinuous();
+  Serial.println("[INIT] Inner sensor OK (0x31)");
 
-  Serial.println("F: BOTH SYSTEMS RUNNING");
+  //  Track power relays: both ON at startup 
+  Serial.println("[INIT] Track power relays -> both ON (LOW = relay off = power flows)...");
+  pinMode(TRACK_POWER_RELAY_INNER, OUTPUT);
+  digitalWrite(TRACK_POWER_RELAY_INNER, LOW);
+  pinMode(TRACK_POWER_RELAY_OUTER, OUTPUT);
+  digitalWrite(TRACK_POWER_RELAY_OUTER, LOW);
+  Serial.println("[INIT] Track 4 (inner) power: ON");
+  Serial.println("[INIT] Track 5 (outer) power: ON");
 
-  // obstacle sensors: internal pull-up so idle state reads HIGH (no obstacle)
-  pinMode(INNER_OBSTACLE_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(OUTER_OBSTACLE_SENSOR_PIN, INPUT_PULLUP);
+  //  Switch pins: DIR LOW, TRIG HIGH (active-LOW idle state) 
+  Serial.println("[INIT] Configuring switch pins (TRIG idle = HIGH)...");
+  for (int i = 0; i < NUM_SWITCHES; i++) {
+    pinMode(switches[i].dirPin,  OUTPUT);
+    pinMode(switches[i].trigPin, OUTPUT);
+    digitalWrite(switches[i].dirPin,  LOW);
+    digitalWrite(switches[i].trigPin, HIGH);
+    Serial.print("[INIT]   ");
+    Serial.print(switches[i].name);
+    Serial.println(" configured");
+  }
 
-  // relays: initialize LOW so both tracks have power ON at startup (relay off = power flows)
-  pinMode(TRACK_POWER_RELAY_1, OUTPUT);
-  digitalWrite(TRACK_POWER_RELAY_1, LOW);
-  pinMode(TRACK_POWER_RELAY_2, OUTPUT);
-  digitalWrite(TRACK_POWER_RELAY_2, LOW);
+  //  Throw switches to outer loop starting position 
+  Serial.println("[INIT] Throwing switches to initial OUTER LOOP position...");
+  switchToOuterLoop();
+  Serial.println("[INIT] Switch init complete");
 
-  // track switches: all OUTPUT, default position
-  pinMode(DIR1,  OUTPUT); digitalWrite(DIR1,  LOW);
-  pinMode(TRIG1, OUTPUT); digitalWrite(TRIG1, LOW);
-  pinMode(DIR2,  OUTPUT); digitalWrite(DIR2,  LOW);
-  pinMode(TRIG2, OUTPUT); digitalWrite(TRIG2, LOW);
-  pinMode(DIR3,  OUTPUT); digitalWrite(DIR3,  LOW);
-  pinMode(TRIG3, OUTPUT); digitalWrite(TRIG3, LOW);
-  pinMode(DIR4,  OUTPUT); digitalWrite(DIR4,  LOW);
-  pinMode(TRIG4, OUTPUT); digitalWrite(TRIG4, LOW);
-
-  // throw switches to outer loop position sequentially — 2s apart to avoid current surge
-  moveSwitch(DIR1, TRIG1, false); delay(2000);
-  moveSwitch(DIR2, TRIG2, false); delay(2000);
-  moveSwitch(DIR4, TRIG4, true);  delay(2000);
-  moveSwitch(DIR3, TRIG3, false);
-  Serial.println("SWITCHES: initialized to outer loop");
+  Serial.println("========================================");
+  Serial.println("[INIT] Startup complete - 5s hold before ConOps begins");
+  Serial.println("========================================");
 
   startTime = millis();
 }
 
-// Fires a 120ms pulse on trigPin to actuate the solenoid switch.
-void pulse(int trigPin) {
-  digitalWrite(trigPin, HIGH);
-  delay(120);
-  digitalWrite(trigPin, LOW);
-}
 
-// Sets DIR pin then fires TRIG pulse to throw a switch in the given direction.
-void moveSwitch(int dirPin, int trigPin, bool dir) {
-  digitalWrite(dirPin, dir);
-  delay(2);
-  pulse(trigPin);
-}
-
-// SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW -> outer loop (trk5)
-void setOuterSwitches() {
-  moveSwitch(DIR1, TRIG1, false);
-  moveSwitch(DIR2, TRIG2, false);
-  moveSwitch(DIR4, TRIG4, true);
-  moveSwitch(DIR3, TRIG3, false);
-  Serial.println("SWITCHES: outer loop");
-}
-
-// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=HIGH -> inner loop (trk4)
-void setInnerSwitches() {
-  moveSwitch(DIR1, TRIG1, true);
-  moveSwitch(DIR2, TRIG2, false);
-  moveSwitch(DIR4, TRIG4, false);
-  moveSwitch(DIR3, TRIG3, true);
-  Serial.println("SWITCHES: inner loop");
-}
-
-// SW1=HIGH, SW2=LOW, SW4=LOW, SW3=LOW -> exit board
-void setExitSwitches() {
-  moveSwitch(DIR1, TRIG1, true);
-  moveSwitch(DIR2, TRIG2, false);
-  moveSwitch(DIR4, TRIG4, false);
-  moveSwitch(DIR3, TRIG3, false);
-  Serial.println("SWITCHES: exit");
-}
-
-// Runs one cycle of sensor read, relay control, servo actuation, and telemetry.
-// Updates global outer_tree_fallen / inner_tree_fallen for loop() to read.
-void runActuation() {
-  int outerDist = outerSensor.readRangeContinuousMillimeters();
-  int innerDist = innerSensor.readRangeContinuousMillimeters();
-
-  outer_tree_fallen = (outerDist <= 170);
-  inner_tree_fallen = (innerDist <= 120);
-  bool both_tree_fallen = outer_tree_fallen && inner_tree_fallen;
-
-  // Track 4 — inner obstacle -> Relay 1 (A1)
-  if (inner_tree_fallen == 1) {
-    digitalWrite(TRACK_POWER_RELAY_1, HIGH);
-    Serial.println("INNER OBSTACLE DETECTED — track 4 power CUT");
-  } else {
-    digitalWrite(TRACK_POWER_RELAY_1, LOW);
-    Serial.println("Track 4 clear — power ON");
-  }
-
-  // Track 5 — outer obstacle -> Relay 2 (A2)
-  if (outer_tree_fallen == 1) {
-    digitalWrite(TRACK_POWER_RELAY_2, HIGH);
-    Serial.println("OUTER OBSTACLE DETECTED — track 5 power CUT");
-  } else {
-    digitalWrite(TRACK_POWER_RELAY_2, LOW);
-    Serial.println("Track 5 clear — power ON");
-  }
-
-  // inner servo
-  if (millis() - innerTimer >= innerInterval) {
-    innerTimer = millis();
-    innerState = !innerState;
-    innerServo.write(innerState ? 90 : 0);
-    inner_tree_lowered = innerState;
-    innerInterval = random(5000, 10000);
-  }
-
-  // outer servo
-  if (millis() - outerTimer >= outerInterval) {
-    outerTimer = millis();
-    outerState = !outerState;
-    outerServo.write(outerState ? 0 : 90); // IMPORTANT: inverted mapping
-    outer_tree_lowered = outerState;
-    outerInterval = random(5000, 10000);
-  }
-
-  Serial.print("inner_dist=");   Serial.print(innerDist);
-  Serial.print(" outer_dist=");  Serial.print(outerDist);
-  Serial.print(" | INNER_FALLEN="); Serial.print(inner_tree_fallen);
-  Serial.print(" OUTER_FALLEN=");   Serial.print(outer_tree_fallen);
-  Serial.print(" | INNER_ACTUATED="); Serial.print(inner_tree_lowered);
-  Serial.print(" OUTER_ACTUATED=");   Serial.print(outer_tree_lowered);
-  Serial.print(" BOTH FALLEN ="); Serial.println(both_tree_fallen);
-
-  delay(500);
-}
-
-//  LOOP
+// LOOP - ConOps
 void loop() {
 
-  // ================= HOLD PHASE =================
+
+  // HOLD PHASE - 5 seconds after startup before ConOps begins
+
   if (!started && (millis() - startTime < 5000)) {
-    Serial.println("hold_phase=1");
+    Serial.println("[HOLD] Waiting... (hold phase active)");
+    delay(500);
     return;
   }
 
   if (!started) {
+    Serial.println("[CONOPS] Hold phase expired - ConOps starting now");
     innerTimer    = millis();
     outerTimer    = millis();
     innerInterval = random(1000, 5000);
@@ -247,42 +327,87 @@ void loop() {
     started = true;
   }
 
-  // ================= OUTER LOOP — 60 seconds =================
-  // If outer track blocked, reroute to inner switches; restore when clear.
-  setOuterSwitches();
+
+  // PHASE 1: OUTER LOOP (60 seconds)
+  //
+  // Normal: train runs outer loop (track 5).
+  // Reroute: if outer track blocked, throw to inner switches
+  //          until outer track clears, then restore outer.
+
+  Serial.println("========================================");
+  Serial.println("[CONOPS] PHASE 1 START: OUTER LOOP (60 seconds)");
+  Serial.println("========================================");
+  switchToOuterLoop();
+
   bool outerRerouted = false;
-  unsigned long t = millis();
-  while (millis() - t < OUTER_DURATION_MS) {
+  unsigned long phaseStart = millis();
+
+  while (millis() - phaseStart < OUTER_PHASE_DURATION_MS) {
     runActuation();
+
     if (outer_tree_fallen && !outerRerouted) {
-      setInnerSwitches();
+      Serial.println("[CONOPS] Outer track blocked - rerouting to INNER LOOP switches");
+      switchToInnerLoop();
       outerRerouted = true;
     } else if (!outer_tree_fallen && outerRerouted) {
-      setOuterSwitches();
+      Serial.println("[CONOPS] Outer track clear - restoring OUTER LOOP switches");
+      switchToOuterLoop();
       outerRerouted = false;
     }
   }
-  if (outerRerouted) setOuterSwitches(); // restore before transitioning
 
-  // ================= INNER LOOP — 60 seconds =================
-  // If inner track blocked, reroute to outer switches; restore when clear.
-  setInnerSwitches();
+  if (outerRerouted) {
+    Serial.println("[CONOPS] Phase 1 ending - restoring OUTER LOOP switches before transition");
+    switchToOuterLoop();
+  }
+  Serial.println("[CONOPS] PHASE 1 COMPLETE");
+
+
+  // PHASE 2: INNER LOOP (60 seconds)
+  //
+  // Normal: train runs inner loop (track 4).
+  // Reroute: if inner track blocked, throw to outer switches
+  //          until inner track clears, then restore inner.
+
+  Serial.println("========================================");
+  Serial.println("[CONOPS] PHASE 2 START: INNER LOOP (60 seconds)");
+  Serial.println("========================================");
+  switchToInnerLoop();
+
   bool innerRerouted = false;
-  t = millis();
-  while (millis() - t < INNER_DURATION_MS) {
+  phaseStart = millis();
+
+  while (millis() - phaseStart < INNER_PHASE_DURATION_MS) {
     runActuation();
+
     if (inner_tree_fallen && !innerRerouted) {
-      setOuterSwitches();
+      Serial.println("[CONOPS] Inner track blocked - rerouting to OUTER LOOP switches");
+      switchToOuterLoop();
       innerRerouted = true;
     } else if (!inner_tree_fallen && innerRerouted) {
-      setInnerSwitches();
+      Serial.println("[CONOPS] Inner track clear - restoring INNER LOOP switches");
+      switchToInnerLoop();
       innerRerouted = false;
     }
   }
-  if (innerRerouted) setInnerSwitches(); // restore before transitioning
 
-  // ================= EXIT =================
-  setExitSwitches();
+  if (innerRerouted) {
+    Serial.println("[CONOPS] Phase 2 ending - restoring INNER LOOP switches before transition");
+    switchToInnerLoop();
+  }
+  Serial.println("[CONOPS] PHASE 2 COMPLETE");
+
+
+  // PHASE 3: EXIT BOARD (indefinite)
+  //
+  // Throw switches to exit board and continue actuation forever.
+  // Sensors and servos remain active for obstacle safety.
+
+  Serial.println("========================================");
+  Serial.println("[CONOPS] PHASE 3 START: EXIT BOARD (indefinite)");
+  Serial.println("========================================");
+  switchToExit();
+
   while (true) {
     runActuation();
   }
