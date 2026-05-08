@@ -17,29 +17,39 @@ RelayPair relays[] = {
 
 const int NUM_RELAYS = 4;
 
-const unsigned long MOVE_DELAY = 10000;
-const unsigned long PULSE_TIME = 50;
+/////////////////////////////////////////////////////////////////
+// TIMING SETTINGS
+/////////////////////////////////////////////////////////////////
 
-// =============================================================
+// Time AFTER setting directions BEFORE triggering relays
+const unsigned long MOVE_DELAY = 10000;
+
+// Tiny spacing between each relay trigger pulse
+// prevents power/current spike
+const unsigned long STAGGER_DELAY = 5;
+
+// Custom delay AFTER each pattern finishes
+const unsigned long PATTERN1_DELAY = 30000;
+const unsigned long PATTERN2_DELAY = 25000;
+const unsigned long PATTERN3_DELAY = 10000;
+
+/////////////////////////////////////////////////////////////////
 
 void triggerAllStaggered() {
 
   Serial.println("TRIGGERING ALL");
 
-  // Trigger one-by-one VERY quickly
-  // prevents power collapse/current spike
-
   for (int i = 0; i < NUM_RELAYS; i++) {
 
     digitalWrite(relays[i].trigPin, LOW);
-    delay(5);
+    delay(STAGGER_DELAY);
 
     digitalWrite(relays[i].trigPin, HIGH);
-    delay(5);
+    delay(STAGGER_DELAY);
   }
 }
 
-// =============================================================
+/////////////////////////////////////////////////////////////////
 
 void setRelayStates(int states[]) {
 
@@ -59,29 +69,34 @@ void setRelayStates(int states[]) {
   }
 }
 
-// =============================================================
+/////////////////////////////////////////////////////////////////
 
-void runPattern(int states[], const char* patternName) {
+void runPattern(
+  int states[],
+  const char* patternName,
+  unsigned long patternDelay
+) {
 
   Serial.println("================================");
   Serial.println(patternName);
 
-  // Set all directions first
+  // Set relay directions
   setRelayStates(states);
 
-  // Wait for actuator direction setup
+  // Wait before triggering
   delay(MOVE_DELAY);
 
-  // Trigger all (slightly staggered)
+  // Trigger relays
   triggerAllStaggered();
 
   Serial.println("DONE");
   Serial.println("================================");
 
-  delay(3000);
+  // Wait after pattern completes
+  delay(patternDelay);
 }
 
-// =============================================================
+/////////////////////////////////////////////////////////////////
 
 void setup() {
 
@@ -98,12 +113,12 @@ void setup() {
   Serial.println("STARTING...");
 }
 
-// =============================================================
+/////////////////////////////////////////////////////////////////
 
 void loop() {
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 1
+  // PATTERN 1: outer loop
   /////////////////////////////////////////////////////////////
 
   int pattern1[] = {
@@ -113,23 +128,31 @@ void loop() {
     HIGH
   };
 
-  runPattern(pattern1, "PATTERN 1");
+  runPattern(
+    pattern1,
+    "PATTERN 1",
+    PATTERN1_DELAY
+  );
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 2
+  // PATTERN 2: inner loop
   /////////////////////////////////////////////////////////////
 
   int pattern2[] = {
     HIGH,
-    LOW,
+    HIGH,
     HIGH,
     HIGH
   };
 
-  runPattern(pattern2, "PATTERN 2");
+  runPattern(
+    pattern2,
+    "PATTERN 2",
+    PATTERN2_DELAY
+  );
 
   /////////////////////////////////////////////////////////////
-  // PATTERN 3
+  // PATTERN 3... exit 
   /////////////////////////////////////////////////////////////
 
   int pattern3[] = {
@@ -139,7 +162,9 @@ void loop() {
     LOW
   };
 
-  runPattern(pattern3, "PATTERN 3");
-
-  delay(5000);
+  runPattern(
+    pattern3,
+    "PATTERN 3",
+    PATTERN3_DELAY
+  );
 }
