@@ -31,6 +31,18 @@ const unsigned long PULSE_TIME = 20;
 
 // =============================================================
 
+// Fires each solenoid one at a time with a 2s gap — used for initialization only.
+void triggerSequential(int states[]) {
+  for (int i = 0; i < NUM_RELAYS; i++) {
+    digitalWrite(relays[i].dirPin, states[i]);
+    delay(2);
+    digitalWrite(relays[i].trigPin, LOW);
+    delay(PULSE_TIME);
+    digitalWrite(relays[i].trigPin, HIGH);
+    delay(2000);
+  }
+}
+
 void triggerAll() {
 
   Serial.println("TRIGGERING ALL");
@@ -105,10 +117,9 @@ void setup() {
 
   delay(20);
 
-  // Initialize to outer loop ConOps: SW1=LOW, SW2=LOW, SW4=HIGH, SW3=LOW
+  // Initialize to outer loop ConOps sequentially — 2s apart to avoid current surge
   int outerInit[] = { 0, 0, 0, 1 }; // SW1=LOW, SW2=LOW, SW3=LOW, SW4=HIGH
-  setRelayStates(outerInit);
-  triggerAll();
+  triggerSequential(outerInit);
 
   Serial.println("SWITCHES initialized to outer loop.");
   Serial.println("4-Relay Simultaneous Test Starting...");
