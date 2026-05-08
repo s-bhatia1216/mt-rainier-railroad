@@ -25,8 +25,8 @@ const int NUM_RELAYS = 4;
 // SETTINGS
 // =============================================================
 
-const unsigned long OUTER_LOOP_DURATION = 45000UL;  // 45s — measured ~25s per lap
-const unsigned long INNER_LOOP_DURATION = 30000UL;  // 30s — measured ~13s per lap
+const unsigned long OUTER_LOOP_DURATION = 10000UL;  // DEBUG: set to 45000 for real run
+const unsigned long INNER_LOOP_DURATION = 7000UL;   // DEBUG: set to 30000 for real run
 const unsigned long PULSE_TIME = 20;
 
 // =============================================================
@@ -202,5 +202,8 @@ void loop() {
 
   Serial.println("ALL PATTERNS COMPLETE — train has exited.");
 
-  for (;;) {} // hold indefinitely after exit
+  while (true) {
+    Serial.println("DONE — holding.");
+    delay(5000);
+  }
 }
