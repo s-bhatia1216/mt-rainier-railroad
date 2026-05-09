@@ -197,11 +197,10 @@ void moveServoSlow(Servo &servo, int startPos, int endPos, int stepDelay) {
 
 void function1() {
 
-  Serial.println("<t 3 50 1>");
-
+  Serial.println("<t 3 50 1>"); // cab speed dir, speed 0..127 or -1 Estop, dir 1=forward 0=reverse  
   delay(5000);
 
-  Serial.println("<0>");
+  //Serial.println("<0>");
 }
 
 /////////////////////////////////////////////////////////////
