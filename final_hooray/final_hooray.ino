@@ -47,6 +47,8 @@ unsigned long outerInterval = 5000;
 bool started = false;
 unsigned long startTime = 0;
 
+bool switchingActive = false;
+
 /////////////////////////////////////////////////////////////
 // ---------------- TRACK RELAYS ----------------
 /////////////////////////////////////////////////////////////
@@ -312,6 +314,7 @@ void loop() {
       if (ntrain != ntrainp){
         // Code here runs when NTrain has changed
         if (ntrain != 0){ // Tests for when North block gets occupied (NTrain NOT zero)
+          switchingActive = true;
           function1();
         }
       }
@@ -429,30 +432,33 @@ void loop() {
   // SWITCH SYSTEM
   /////////////////////////////////////////////////////////////
 
-  if (currentPattern == 0) {
+  if (switchingActive) {
 
-    runPattern(pattern1,
-               "PATTERN 1",
-               PATTERN1_DELAY);
-  }
+    if (currentPattern == 0) {
 
-  else if (currentPattern == 1) {
+      runPattern(pattern1,
+                 "PATTERN 1",
+                 PATTERN1_DELAY);
+    }
 
-    runPattern(pattern2,
-               "PATTERN 2",
-               PATTERN2_DELAY);
-  }
+    else if (currentPattern == 1) {
 
-  else if (currentPattern == 2) {
+      runPattern(pattern2,
+                 "PATTERN 2",
+                 PATTERN2_DELAY);
+    }
 
-    runPattern(pattern3,
-               "PATTERN 3",
-               PATTERN3_DELAY);
-  }
+    else if (currentPattern == 2) {
 
-  else {
+      runPattern(pattern3,
+                 "PATTERN 3",
+                 PATTERN3_DELAY);
+    }
 
-    currentPattern = 0;
+    else {
+
+      currentPattern = 0;
+    }
   }
 
   /////////////////////////////////////////////////////////////
