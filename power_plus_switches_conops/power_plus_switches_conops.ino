@@ -96,7 +96,7 @@ const unsigned long STAGGER_DELAY = 5;
 
 /////////////////////////////////////////////////////////////
 
-const unsigned long PATTERN1_DELAY = 30000;
+const unsigned long PATTERN1_DELAY = 60000;
 
 const unsigned long PATTERN2_DELAY = 30000;
 

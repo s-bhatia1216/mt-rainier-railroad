@@ -127,7 +127,8 @@ void loop() {
     innerServo.write(innerState ? 90 : 0);
     inner_tree_lowered = innerState;
     innerInterval = random(5000, 10000);
-  }
+  }!~
+  
 
   // Outer servo tick
   if (millis() - outerTimer >= outerInterval) {
