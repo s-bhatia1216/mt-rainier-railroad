@@ -291,6 +291,20 @@ void setup() {
 // LOOP (STRUCTURE PRESERVED EXACTLY)
 
 /////////////////////////////////////////////////////////////
+void moveServoSlow(Servo &servo, int startPos, int endPos, int stepDelay) {
+  if (startPos < endPos) {
+    for (int pos = startPos; pos <= endPos; pos++) {
+      servo.write(pos);
+      delay(stepDelay);
+    }
+  } else {
+    for (int pos = startPos; pos >= endPos; pos--) {
+      servo.write(pos);
+      delay(stepDelay);
+    }
+  }
+}
+
 
 void loop() {
 
@@ -369,16 +383,42 @@ void loop() {
 
   /////////////////////////////////////////////////////////////
 
+  // if (millis() - innerTimer >= innerInterval) {
+
+  //   innerTimer = millis();
+
+  //   innerState = !innerState;
+
+  //   innerServo.write(innerState ? 90 : 0);
+
+  //   innerInterval = random(5000, 10000);
+
+  // }
+
+  // if (millis() - outerTimer >= outerInterval) {
+
+  //   outerTimer = millis();
+
+  //   outerState = !outerState;
+
+  //   outerServo.write(outerState ? 0 : 90);
+
+  //   outerInterval = random(5000, 10000);
+
+  // }
+
   if (millis() - innerTimer >= innerInterval) {
 
     innerTimer = millis();
 
     innerState = !innerState;
 
-    innerServo.write(innerState ? 90 : 0);
+    moveServoSlow(innerServo,
+                  innerState ? 0 : 110,
+                  innerState ? 110 : 0,
+                  15);   // bigger = slower
 
     innerInterval = random(5000, 10000);
-
   }
 
   if (millis() - outerTimer >= outerInterval) {
@@ -387,10 +427,12 @@ void loop() {
 
     outerState = !outerState;
 
-    outerServo.write(outerState ? 0 : 90);
+    moveServoSlow(outerServo,
+                  outerState ? 110 : 0,
+                  outerState ? 0 : 110,
+                  15);
 
     outerInterval = random(5000, 10000);
-
   }
 
   /////////////////////////////////////////////////////////////
